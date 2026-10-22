@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="cyberpunk">
+<head>
+  <meta charset="UTF-8">
+  <title>NeuroHabits - Mind & Habit Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <!-- BARRA LATERAL DESPLEGABLE -->
+  <aside id="sidebarMenu" class="sidebar">
+    <div class="sidebar-header">
+      <h3 style="font-size: 15px;">⚡ Menú de Disciplina</h3>
+      <button class="btn-close-sidebar" onclick="toggleSidebar()">&times;</button>
+    </div>
+
+    <div class="sidebar-content">
+      <div class="sidebar-section">
+        <h4>🎨 Tema Visual</h4>
+        <button class="btn-theme-sidebar" onclick="toggleTemaVisual()">🔥 Cambiar Tema (Cyberpunk / Infierno)</button>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>🏅 Progreso de Rangos</h4>
+        <div id="sidebarRangosListaContainer" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>📜 Historial Mensual (<span id="mesActualLabel">Octubre 2026</span>)</h4>
+        <div class="heatmap-header-mini">
+          <span>🟩 Cumplido</span>
+          <span>🟥 Fallado</span>
+        </div>
+        <div class="heatmap-grid-mini" id="heatmapGridMini"></div>
+        <div class="chart-box-mini" style="margin: 8px auto; width: 100px; height: 100px;">
+          <canvas id="chartMesHabitos"></canvas>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>📊 Semana Pasada</h4>
+        <button class="btn-mini" style="width: 100%; font-size: 11px;" onclick="verHistorialSemanaAnterior()">Ver Resumen</button>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app-container">
+    
+    <!-- HEADER -->
+    <header class="app-header">
+      <div class="header-col-left" style="display: flex; align-items: center; gap: 12px;">
+        <button class="btn-hamburger" onclick="toggleSidebar()" title="Abrir Menú Lateral">☰</button>
+        <h2 class="logo-neon">NEUROHABITS</h2>
+      </div>
+      
+      <div class="header-col-right">
+        <div class="header-center-info">
+          <span>Corteza Prefrontal vs Sistema Límbico</span>
+          <button class="btn-info-icon" onclick="abrirModalExplicacion()" title="¿Qué significa esto?">❓</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-layout">
+      
+      <!-- COLUMNA IZQUIERDA -->
+      <section class="col-left border-neon">
+        
+        <div class="top-scrollable-area">
+          <div class="section-header">
+            <h3>📅 Planilla Semanal de Hábitos</h3>
+            <button class="btn-mini" onclick="agregarNuevoHabito()">+ Nuevo Hábito</button>
+          </div>
+          <div id="tablaHabitosContainer" class="tabla-container"></div>
+        </div>
+
+        <!-- TARJETAS ANCLADAS ABAJO -->
+        <div class="bottom-anchored-cards">
+          <div class="excusa-card border-neon">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <h4 style="color: var(--accent-red); font-size: 12px;">🛑 ELEGÍ TU EXCUSA DEL DÍA</h4>
+              <button class="btn-mini" style="font-size: 10px; padding: 2px 6px;" onclick="siguienteExcusa()">Otra Excusa ➔</button>
+            </div>
+            <p id="textoExcusaDiaria" class="text-phrase-lg">Cargando...</p>
+          </div>
+
+          <div class="frases-card border-neon">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <h4 style="color: var(--accent-cyan); font-size: 12px;">⚡ FILOSOFÍA DE DISCIPLINA PURA</h4>
+              <button class="btn-mini" style="font-size: 10px; padding: 2px 6px;" onclick="siguienteFraseFilosofia()">Siguiente ➔</button>
+            </div>
+            <p id="textoFilosofiaDiaria" class="text-phrase-lg">Cargando...</p>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- COLUMNA DERECHA -->
+      <section class="col-right border-neon">
+        <h3>🧠 Respuesta Neuroquímica</h3>
+        
+        <div class="streak-badge border-neon">
+          🔥 Racha Imparable: <strong id="streakCount" style="color: var(--accent-cyan);">0 días</strong>
+        </div>
+
+        <!-- CEREBRO -->
+        <div class="brain-wrapper">
+          <img id="imgBrainBase" src="./assets/brain_base.png" onerror="this.src='./assets/brain_base.jpg'" class="brain-layer base" alt="Cerebro Neutro">
+          <img id="imgBrainPrefrontal" src="./assets/brain_prefrontal.png" onerror="this.src='./assets/brain_prefrontal.jpg'" class="brain-layer overlay" alt="Corteza Prefrontal">
+          <img id="imgBrainLimbico" src="./assets/brain_limbico.png" onerror="this.src='./assets/brain_limbico.jpg'" class="brain-layer overlay" alt="Sistema Límbico">
+        </div>
+
+        <div class="progress-section">
+          <div class="progress-info-row">
+            <span>Dominio Prefrontal:</span>
+            <span id="progressPercent" class="progress-num">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="progressBarFill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="feedback-box">
+          <p class="status-good">
+            MEJORASTE TU CORTEZA PREFRONTAL = <strong id="valPrefrontal">0%</strong>
+            <span id="frasePrefrontal" class="sub-phrase-lg">"Stay Hard! Te estás volviendo imparable."</span>
+          </p>
+          
+          <p class="status-bad">
+            TU SISTEMA LÍMBICO AUMENTÓ = <strong id="valLimbico">0%</strong>
+            <span id="fraseLimbico" class="sub-phrase-lg">"Basta de excusas, ganale a tu cabeza."</span>
+          </p>
+        </div>
+
+        <!-- FOTO GOGGINS -->
+        <div class="mentor-card border-neon" onclick="toggleSidebar()" style="cursor: pointer;" title="Ver todos los rangos en el menú">
+          <img id="mentorImg" src="./assets/goggins_lvl1.png" onerror="this.src='https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80'" alt="Rango Goggins">
+          <div class="mentor-overlay">
+            <span id="mentorName">NIVEL 1: ZONA DE CONFORT (Meta: 50%)</span>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL EXPLICATIVO -->
+  <div id="modalExplicacion" class="modal">
+    <div class="modal-content border-neon" style="width: 480px;">
+      <span class="close-btn" onclick="cerrarModalExplicacion()">&times;</span>
+      <h3 style="color:var(--accent-cyan); margin-bottom: 12px;">🧠 Neurociencia de tus Hábitos</h3>
+      <div class="info-block">
+        <h4 style="color:var(--accent-cyan); margin-bottom: 4px;">🔵 Corteza Prefrontal (Disciplina y Evolución)</h4>
+        <p style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
+          Es la región más avanzada del cerebro humano. Se encarga de la planificación a largo plazo, el autocontrol y la fuerza de voluntad.
+        </p>
+      </div>
+      <div class="info-block" style="margin-top: 14px;">
+        <h4 style="color:var(--accent-red); margin-bottom: 4px;">🔴 Sistema Límbico (Instinto y Comodidad)</h4>
+        <p style="font-size: 12px; color: #cbd5e1; line-height: 1.4;">
+          El centro emocional primitivo del cerebro. Busca el placer inmediato y evita el esfuerzo (zona de confort).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL HISTORIAL SEMANA PASADA -->
+  <div id="modalSemanaPasada" class="modal">
+    <div class="modal-content border-neon" style="width: 440px;">
+      <span class="close-btn" onclick="cerrarModalSemanaPasada()">&times;</span>
+      <h3 style="color:var(--accent-cyan); margin-bottom: 12px;">📊 Rendimiento Semana Anterior</h3>
+      <div id="contenidoSemanaPasada" style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">
+        Cargando datos...
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PARA NUEVO HÁBITO -->
+  <div id="modalNuevoHabito" class="modal">
+    <div class="modal-content border-neon" style="width: 380px; text-align: center;">
+      <span class="close-btn" onclick="cerrarModalHabito()">&times;</span>
+      <h3 style="color:var(--accent-cyan); margin-bottom: 12px;">⚡ Nuevo Hábito</h3>
+      <p style="font-size: 12px; color: #cbd5e1; margin-bottom: 12px;">Escribí el nombre del hábito (máx. 30 caracteres):</p>
+      <input type="text" id="inputNombreHabito" maxlength="30" placeholder="Ej: Leer 15 páginas..." style="width: 100%; padding: 8px; background: #08080a; border: 1px solid var(--accent-cyan); color: #fff; border-radius: 6px; margin-bottom: 16px; outline: none; font-size: 13px;">
+      <div style="display: flex; gap: 10px; justify-content: center;">
+        <button class="btn-mini" onclick="guardarNuevoHabito()" style="padding: 6px 16px;">Guardar Hábito</button>
+        <button class="btn-mini" onclick="cerrarModalHabito()" style="background: #222; border-color: #555; padding: 6px 16px;">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

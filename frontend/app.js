@@ -125,7 +125,7 @@ function renderizarTabla() {
             if (chk === 'YES') { claseCss += ' checked-yes'; textoSim = '✔'; }
             else if (chk === 'NO') { claseCss += ' checked-no'; textoSim = '✖'; }
             
-            attrClick = `onmousedown="manejarClickRaton(event, ${hIdx}, ${dIdx})" oncontextmenu="return false;"`;
+            attrClick = `onmousedown="manejarClickRaton(event, ${hIdx}, ${dIdx})" oncontextmenu="event.preventDefault(); return false;"`;
           }
 
           return `
@@ -149,6 +149,8 @@ function renderizarTabla() {
 
 function manejarClickRaton(evento, hIdx, dIdx) {
   evento.preventDefault();
+  evento.stopPropagation();
+  
   if (evento.button === 0) {
     manejarClickHabito(hIdx, dIdx, 'LEFT');
   } else if (evento.button === 2) {

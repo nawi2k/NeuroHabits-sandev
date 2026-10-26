@@ -409,23 +409,91 @@ function eliminarHabito(idx) {
   }
 }
 
-function verificarReseteoSemanal() {
-  const ultimaSemanaGuardada = localStorage.getItem('NEURO_LAST_WEEK_RESET');
-  const semanaActual = Math.ceil(new Date().getDate() / 7);
+// ---------- SEMANA (lunes a domingo) Y RANGOS ----------
+function claveFecha(f) {
+  return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
+}
 
-  if (ultimaSemanaGuardada && parseInt(ultimaSemanaGuardada) !== semanaActual) {
-    const historialAnterior = {
-      semana: ultimaSemanaGuardada,
+// Devuelve el lunes de la semana actual. Mismo criterio que obtenerIndiceDiaActual:
+// antes de las 4 AM todavía cuenta como el día anterior.
+function obtenerLunesActual() {
+  const f = new Date();
+  if (f.getHours() < 4) f.setDate(f.getDate() - 1);
+  f.setDate(f.getDate() - ((f.getDay() + 6) % 7));
+  return f;
+}
+
+function formatearSemana(clave) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clave || '');
+  return m ? `${m[3]}/${m[2]}` : `#${clave}`;
+}
+
+function calcularPorcentajeSemana(lista) {
+  const total = lista.length * 7;
+  if (total === 0) return 0;
+  const hechos = lista.reduce((acc, h) => acc + h.checks.filter(c => c === 'YES').length, 0);
+  return Math.round((hechos / total) * 100);
+}
+
+function evaluarSubidaDeNivel(pct) {
+  const maxNivel = RANGOS_GOGGINS[RANGOS_GOGGINS.length - 1].nivel;
+  const rangoAnterior = RANGOS_GOGGINS.find(r => r.nivel === estadoGoggins.nivel) || RANGOS_GOGGINS[0];
+  let subio = false;
+
+  if (pct >= rangoAnterior.meta && rangoAnterior.nivel < maxNivel) {
+    estadoGoggins.nivel = rangoAnterior.nivel + 1;
+    subio = true;
+  }
+
+  const rangoNuevo = RANGOS_GOGGINS.find(r => r.nivel === estadoGoggins.nivel) || rangoAnterior;
+  estadoGoggins.metaRequerida = rangoNuevo.meta;
+  localStorage.setItem('NEURO_GOGGINS_STATE', JSON.stringify(estadoGoggins));
+
+  return { subio, rangoAnterior, rangoNuevo };
+}
+
+function verificarReseteoSemanal() {
+  const lunesActual = obtenerLunesActual();
+  const semanaActual = claveFecha(lunesActual);
+  let semanaGuardada = localStorage.getItem('NEURO_LAST_WEEK_RESET');
+
+  // Migración: la versión vieja guardaba "semana del mes" (1 a 5).
+  // Se toma como si los datos fueran de la semana pasada, así se cierra esa semana una vez.
+  if (semanaGuardada && !/^\d{4}-\d{2}-\d{2}$/.test(semanaGuardada)) {
+    const anterior = new Date(lunesActual);
+    anterior.setDate(anterior.getDate() - 7);
+    semanaGuardada = claveFecha(anterior);
+  }
+
+  if (semanaGuardada && semanaGuardada !== semanaActual) {
+    const pct = calcularPorcentajeSemana(habitos);
+    const resultado = habitos.length > 0 ? evaluarSubidaDeNivel(pct) : null;
+
+    localStorage.setItem('NEURO_SEMANA_ANTERIOR', JSON.stringify({
+      semana: semanaGuardada,
+      pct: pct,
+      subioNivel: resultado ? resultado.subio : false,
       habitosSnapshot: JSON.parse(JSON.stringify(habitos))
-    };
-    localStorage.setItem('NEURO_SEMANA_ANTERIOR', JSON.stringify(historialAnterior));
+    }));
 
     habitos.forEach(h => {
       h.checks = [null, null, null, null, null, null, null];
     });
     localStorage.setItem('NEURO_HABITS_V17', JSON.stringify(habitos));
-    alert('🔄 ¡Nueva semana! Se guardó tu registro anterior y se reseteó la planilla.');
+
+    let mensaje = `🔄 ¡Nueva semana! Cerraste la semana del ${formatearSemana(semanaGuardada)} con ${pct}% de dominio prefrontal.\n\n`;
+    if (!resultado) {
+      mensaje += 'No tenías hábitos cargados, así que no hubo cambio de rango.';
+    } else if (resultado.subio) {
+      mensaje += `🏆 ¡SUBISTE DE RANGO!\n${resultado.rangoAnterior.nombre} ➔ ${resultado.rangoNuevo.nombre}\nNueva meta: ${resultado.rangoNuevo.meta}%`;
+    } else if (pct >= resultado.rangoAnterior.meta) {
+      mensaje += 'Ya estás en el rango máximo. ¡Stay Hard!';
+    } else {
+      mensaje += `No llegaste a la meta de ${resultado.rangoAnterior.meta}%, así que seguís en ${resultado.rangoAnterior.nombre}. ¡Esta semana se puede!`;
+    }
+    alert(mensaje);
   }
+
   localStorage.setItem('NEURO_LAST_WEEK_RESET', semanaActual);
 }
 
@@ -437,7 +505,8 @@ function verHistorialSemanaAnterior() {
     contenedor.innerHTML = `<p style="text-align: center; color: #64748b;">Todavía no hay registros de semanas anteriores.</p>`;
   } else {
     const datos = JSON.parse(rawData);
-    let html = `<p style="margin-bottom: 8px; color: var(--accent-cyan);"><strong>Semana #${datos.semana}</strong></p><ul>`;
+    const pctSemana = (typeof datos.pct === 'number') ? datos.pct : calcularPorcentajeSemana(datos.habitosSnapshot);
+    let html = `<p style="margin-bottom: 8px; color: var(--accent-cyan);"><strong>Semana del ${formatearSemana(datos.semana)}</strong> — Dominio prefrontal: <strong>${pctSemana}%</strong>${datos.subioNivel ? ' 🏆 (subiste de rango)' : ''}</p><ul>`;
     datos.habitosSnapshot.forEach(h => {
       const hechos = h.checks.filter(c => c === 'YES').length;
       html += `<li style="margin-bottom: 4px;">${h.nombre}: <strong>${hechos}/7 días cumplidos</strong></li>`;
@@ -482,3 +551,11 @@ function actualizarGraficoMini(pctPre, pctLim) {
 
 verificarReseteoSemanal();
 renderizarTabla();
+
+// Si la app queda abierta y pasa el lunes (4 AM), reinicia sola sin tener que cerrarla
+setInterval(() => {
+  if (claveFecha(obtenerLunesActual()) !== localStorage.getItem('NEURO_LAST_WEEK_RESET')) {
+    verificarReseteoSemanal();
+    renderizarTabla();
+  }
+}, 60000);

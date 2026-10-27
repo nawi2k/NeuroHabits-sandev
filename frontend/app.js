@@ -2,6 +2,7 @@ let habitos = JSON.parse(localStorage.getItem('NEURO_HABITS_V17')) || [];
 const DIAS = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
 let estadoGoggins = JSON.parse(localStorage.getItem('NEURO_GOGGINS_STATE')) || { nivel: 1, metaRequerida: 50 };
+let historialDiario = JSON.parse(localStorage.getItem('NEURO_HISTORIAL_DIARIO') || '{}');
 
 const AUDIO_FAIL_BITCH = new Audio('./assets/bitch.mp3'); 
 const AUDIO_TICK_GOGGINS = new Audio('https://www.myinstants.com/media/sounds/bell-ring.mp3'); 
@@ -125,7 +126,7 @@ function renderizarTabla() {
             if (chk === 'YES') { claseCss += ' checked-yes'; textoSim = '✔'; }
             else if (chk === 'NO') { claseCss += ' checked-no'; textoSim = '✖'; }
             
-            attrClick = `onmousedown="manejarClickRaton(event, ${hIdx}, ${dIdx})" oncontextmenu="event.preventDefault(); return false;"`;
+            attrClick = `data-h="${hIdx}" data-d="${dIdx}"`;
           }
 
           return `
@@ -147,56 +148,63 @@ function renderizarTabla() {
   actualizarMetricas();
 }
 
-function manejarClickRaton(evento, hIdx, dIdx) {
-  evento.preventDefault();
-  evento.stopPropagation();
-  
-  if (evento.button === 0) {
-    manejarClickHabito(hIdx, dIdx, 'LEFT');
-  } else if (evento.button === 2) {
-    manejarClickHabito(hIdx, dIdx, 'RIGHT');
-  }
-}
-
 function manejarClickHabito(hIdx, dIdx, tipoClick) {
   const diaHoyIdx = obtenerIndiceDiaActual();
-  if (dIdx > diaHoyIdx) return; 
+  if (!habitos[hIdx] || dIdx > diaHoyIdx) return;
 
   const actual = habitos[hIdx].checks[dIdx];
-
+  let nuevo;
   if (tipoClick === 'LEFT') {
-    habitos[hIdx].checks[dIdx] = (actual === 'YES') ? null : 'YES';
-    if (habitos[hIdx].checks[dIdx] === 'YES') {
+    nuevo = (actual === 'YES') ? null : 'YES';
+  } else {
+    nuevo = (actual === 'NO') ? null : 'NO';
+  }
+  habitos[hIdx].checks[dIdx] = nuevo;
+  localStorage.setItem('NEURO_HABITS_V17', JSON.stringify(habitos));
+
+  // 1) Primero se redibuja la tabla, así la ✔ / ✖ aparece siempre al instante
+  try { renderizarTabla(); } catch (e) { console.error('Error al redibujar:', e); }
+
+  // 2) Después los efectos (animación, sonido, frase). Si alguno falla, la tabla ya quedó actualizada
+  try {
+    if (nuevo === 'YES') {
       dispararAnimacionCerebro('PREFRONTAL');
-      try { AUDIO_TICK_GOGGINS.play(); } catch(e) {}
+      try { AUDIO_TICK_GOGGINS.currentTime = 0; AUDIO_TICK_GOGGINS.play().catch(() => {}); } catch (e) {}
 
       const fraseExito = FRASES_GOGGINS_SUCCESS[Math.floor(Math.random() * FRASES_GOGGINS_SUCCESS.length)];
       const elFrase = document.getElementById('frasePrefrontal');
       elFrase.innerText = `"${fraseExito}"`;
-      
       elFrase.classList.remove('trigger-glow-blue');
       void elFrase.offsetWidth;
       elFrase.classList.add('trigger-glow-blue');
-    }
-  } else if (tipoClick === 'RIGHT') {
-    habitos[hIdx].checks[dIdx] = (actual === 'NO') ? null : 'NO';
-    if (habitos[hIdx].checks[dIdx] === 'NO') {
+    } else if (nuevo === 'NO') {
       dispararAnimacionCerebro('LIMBICO');
-      try { AUDIO_FAIL_BITCH.play(); } catch(e) {}
+      try { AUDIO_FAIL_BITCH.currentTime = 0; AUDIO_FAIL_BITCH.play().catch(() => {}); } catch (e) {}
 
       const fraseFallo = FRASES_GOGGINS_FAIL[Math.floor(Math.random() * FRASES_GOGGINS_FAIL.length)];
       const elFrase = document.getElementById('fraseLimbico');
       elFrase.innerText = `"${fraseFallo}"`;
-      
       elFrase.classList.remove('trigger-glow-red');
       void elFrase.offsetWidth;
       elFrase.classList.add('trigger-glow-red');
     }
+  } catch (e) {
+    console.error('Error en los efectos:', e);
   }
-
-  localStorage.setItem('NEURO_HABITS_V17', JSON.stringify(habitos));
-  renderizarTabla();
 }
+
+// Un solo "escuchador" para toda la tabla: no se pierde cuando la tabla se redibuja
+const contenedorTabla = document.getElementById('tablaHabitosContainer');
+contenedorTabla.addEventListener('mousedown', (e) => {
+  const celda = e.target.closest('.cell-checkbox[data-h]');
+  if (!celda) return;
+  e.preventDefault();
+  const h = Number(celda.dataset.h);
+  const d = Number(celda.dataset.d);
+  if (e.button === 0) manejarClickHabito(h, d, 'LEFT');
+  else if (e.button === 2) manejarClickHabito(h, d, 'RIGHT');
+});
+contenedorTabla.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function dispararAnimacionCerebro(tipo) {
   const imgPrefrontal = document.getElementById('imgBrainPrefrontal');
@@ -256,7 +264,8 @@ function actualizarMetricas() {
   document.getElementById('mentorName').innerText = `${rangoActual.nombre} (${rangoActual.desc})`;
 
   renderizarSidebarRangos();
-  renderizarHeatmapMini(habitos);
+  guardarDiaActual();
+  renderizarHeatmapMini();
   actualizarGraficoMini(pctTotal, pctLimbico);
 }
 
@@ -266,6 +275,7 @@ function toggleTemaVisual() {
   const nuevoTema = temaActual === 'inferno' ? 'cyberpunk' : 'inferno';
   htmlTag.setAttribute('data-theme', nuevoTema);
   localStorage.setItem('NEURO_THEME', nuevoTema);
+  try { renderizarTabla(); } catch (e) {}
 }
 
 const temaGuardado = localStorage.getItem('NEURO_THEME');
@@ -329,43 +339,139 @@ function calcularRachaYMostrar() {
   document.getElementById('streakCount').innerText = `${racha} ${racha === 1 ? 'día' : 'días'}`;
 }
 
-function renderizarHeatmapMini(listaHabitos) {
+// ---------- HISTORIAL DIARIO (se guarda para siempre en NEURO_HISTORIAL_DIARIO) ----------
+function obtenerFechaActual() {
+  const f = new Date();
+  if (f.getHours() < 4) f.setDate(f.getDate() - 1);
+  return f;
+}
+
+function calcularDia(idxDia, lista) {
+  const total = lista.length;
+  let hechos = 0, fallos = 0;
+  lista.forEach(h => {
+    if (h.checks[idxDia] === 'YES') hechos++;
+    if (h.checks[idxDia] === 'NO') fallos++;
+  });
+  return {
+    hechos: hechos,
+    fallos: fallos,
+    total: total,
+    pre: total > 0 ? Math.round((hechos / total) * 100) : 0,
+    lim: total > 0 ? Math.round((fallos / total) * 100) : 0
+  };
+}
+
+function guardarHistorialDiario() {
+  localStorage.setItem('NEURO_HISTORIAL_DIARIO', JSON.stringify(historialDiario));
+}
+
+function guardarDiaActual() {
+  if (habitos.length === 0) return;
+  historialDiario[claveFecha(obtenerFechaActual())] = calcularDia(obtenerIndiceDiaActual(), habitos);
+  guardarHistorialDiario();
+}
+
+// Al cerrar una semana, completa los días que no tengan registro con lo que quedó en la planilla
+function volcarSemanaAlHistorial(claveLunes, lista) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(claveLunes || '');
+  if (!m || lista.length === 0) return;
+  const lunes = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  for (let i = 0; i < 7; i++) {
+    const f = new Date(lunes);
+    f.setDate(lunes.getDate() + i);
+    const clave = claveFecha(f);
+    const dia = calcularDia(i, lista);
+    if (historialDiario[clave] || dia.hechos + dia.fallos === 0) continue;
+    historialDiario[clave] = dia;
+  }
+  guardarHistorialDiario();
+}
+
+// Promedio de los últimos "dias" días que terminan en "fin". Solo cuentan días con alguna marca.
+function promedioVentana(fin, dias) {
+  let suma = 0, cant = 0;
+  for (let i = 0; i < dias; i++) {
+    const f = new Date(fin);
+    f.setDate(f.getDate() - i);
+    const reg = historialDiario[claveFecha(f)];
+    if (reg && reg.hechos + reg.fallos > 0) { suma += reg.pre; cant++; }
+  }
+  return cant > 0 ? Math.round(suma / cant) : null;
+}
+
+function renderizarHeatmapMini() {
   const grid = document.getElementById('heatmapGridMini');
   grid.innerHTML = '';
-  const diasMes = 30;
-  const diaHoy = new Date().getDate(); 
-  const diaHoyIdx = obtenerIndiceDiaActual();
+
+  const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const hoy = obtenerFechaActual();
+  const claveHoy = claveFecha(hoy);
+  const anio = hoy.getFullYear();
+  const mes = hoy.getMonth();
+  const diasMes = new Date(anio, mes + 1, 0).getDate();
+  const offset = (new Date(anio, mes, 1).getDay() + 6) % 7; // columna del día 1 (lunes = 0)
+
+  const etiqueta = document.getElementById('mesActualLabel');
+  if (etiqueta) etiqueta.innerText = `${MESES[mes]} ${anio}`;
+
+  ['L', 'M', 'X', 'J', 'V', 'S', 'D'].forEach(letra => {
+    const cab = document.createElement('div');
+    cab.className = 'heatmap-weekday';
+    cab.innerText = letra;
+    grid.appendChild(cab);
+  });
+
+  let sumaMes = 0, cantMes = 0;
 
   for (let d = 1; d <= diasMes; d++) {
+    const clave = claveFecha(new Date(anio, mes, d));
+    const reg = historialDiario[clave];
+    const esHoy = clave === claveHoy;
+    const conMarcas = reg && (reg.hechos + reg.fallos) > 0;
+
     const box = document.createElement('div');
     let clase = 'block-day-mini';
     let textoDiaExtra = '';
 
-    if (d === diaHoy) {
-      let totalHabitosActivos = listaHabitos.length;
-      let cumplidosHoy = 0;
-      let falladosHoy = 0;
+    if (d === 1 && offset > 0) box.style.gridColumnStart = String(offset + 1);
 
-      listaHabitos.forEach(h => {
-        if (h.checks[diaHoyIdx] === 'YES') cumplidosHoy++;
-        if (h.checks[diaHoyIdx] === 'NO') falladosHoy++;
-      });
-
-      let pctHoy = totalHabitosActivos > 0 ? Math.round((cumplidosHoy / totalHabitosActivos) * 100) : 0;
-      let pctFallosHoy = totalHabitosActivos > 0 ? Math.round((falladosHoy / totalHabitosActivos) * 100) : 0;
-
-      if (pctHoy >= 50 || (cumplidosHoy > 0 && falladosHoy === 0)) {
-        clase += ' cumplido';
-      } else if (pctFallosHoy > 0 || falladosHoy > 0) {
-        clase += ' fallado';
-      }
-
-      textoDiaExtra = `<span>${pctHoy}%</span>`;
+    if (reg && (conMarcas || esHoy)) {
+      textoDiaExtra = `<span>${reg.pre}%</span>`;
+      box.title = `Corteza prefrontal ${reg.pre}% · Sistema límbico ${reg.lim}%`;
     }
+    if (conMarcas) {
+      clase += reg.pre >= 50 ? ' cumplido' : ' fallado';
+      sumaMes += reg.pre;
+      cantMes++;
+    }
+    if (esHoy) clase += ' hoy';
 
     box.className = clase;
     box.innerHTML = `${d}${textoDiaExtra}`;
     grid.appendChild(box);
+  }
+
+  const resumen = document.getElementById('resumenMes');
+  if (resumen) {
+    let html = cantMes > 0
+      ? `Promedio del mes: <strong>${Math.round(sumaMes / cantMes)}%</strong>`
+      : 'Todavía no hay días registrados este mes.';
+
+    const prom7 = promedioVentana(hoy, 7);
+    if (prom7 !== null) {
+      html += `<br>Últimos 7 días: <strong>${prom7}%</strong>`;
+      const finAnterior = new Date(hoy);
+      finAnterior.setDate(finAnterior.getDate() - 7);
+      const prom7Ant = promedioVentana(finAnterior, 7);
+      if (prom7Ant !== null) {
+        const dif = prom7 - prom7Ant;
+        if (dif > 0) html += ` · <span style="color: var(--accent-cyan);">▲ +${dif} pts</span> vs. los 7 anteriores`;
+        else if (dif < 0) html += ` · <span style="color: var(--accent-red);">▼ ${dif} pts</span> vs. los 7 anteriores`;
+        else html += ' · igual que los 7 anteriores';
+      }
+    }
+    resumen.innerHTML = html;
   }
 }
 
@@ -469,12 +575,18 @@ function verificarReseteoSemanal() {
     const pct = calcularPorcentajeSemana(habitos);
     const resultado = habitos.length > 0 ? evaluarSubidaDeNivel(pct) : null;
 
-    localStorage.setItem('NEURO_SEMANA_ANTERIOR', JSON.stringify({
-      semana: semanaGuardada,
-      pct: pct,
-      subioNivel: resultado ? resultado.subio : false,
-      habitosSnapshot: JSON.parse(JSON.stringify(habitos))
-    }));
+    volcarSemanaAlHistorial(semanaGuardada, habitos);
+
+    // Solo se guarda como "semana pasada" si hubo alguna marca (así una planilla vacía no pisa datos reales)
+    const huboActividad = habitos.some(h => h.checks.some(c => c !== null));
+    if (huboActividad) {
+      localStorage.setItem('NEURO_SEMANA_ANTERIOR', JSON.stringify({
+        semana: semanaGuardada,
+        pct: pct,
+        subioNivel: resultado ? resultado.subio : false,
+        habitosSnapshot: JSON.parse(JSON.stringify(habitos))
+      }));
+    }
 
     habitos.forEach(h => {
       h.checks = [null, null, null, null, null, null, null];
@@ -500,11 +612,13 @@ function verificarReseteoSemanal() {
 function verHistorialSemanaAnterior() {
   const rawData = localStorage.getItem('NEURO_SEMANA_ANTERIOR');
   const contenedor = document.getElementById('contenidoSemanaPasada');
-  
-  if (!rawData) {
+  const datos = rawData ? JSON.parse(rawData) : null;
+  const hayDatos = datos && Array.isArray(datos.habitosSnapshot) &&
+    datos.habitosSnapshot.some(h => h.checks.some(c => c !== null));
+
+  if (!hayDatos) {
     contenedor.innerHTML = `<p style="text-align: center; color: #64748b;">Todavía no hay registros de semanas anteriores.</p>`;
   } else {
-    const datos = JSON.parse(rawData);
     const pctSemana = (typeof datos.pct === 'number') ? datos.pct : calcularPorcentajeSemana(datos.habitosSnapshot);
     let html = `<p style="margin-bottom: 8px; color: var(--accent-cyan);"><strong>Semana del ${formatearSemana(datos.semana)}</strong> — Dominio prefrontal: <strong>${pctSemana}%</strong>${datos.subioNivel ? ' 🏆 (subiste de rango)' : ''}</p><ul>`;
     datos.habitosSnapshot.forEach(h => {
@@ -526,13 +640,17 @@ function cerrarModalExplicacion() { document.getElementById('modalExplicacion').
 
 let chartMiniInst = null;
 function actualizarGraficoMini(pctPre, pctLim) {
+  if (typeof Chart === 'undefined') return; // sin internet no carga Chart.js; que no rompa el resto
   const ctx = document.getElementById('chartMesHabitos').getContext('2d');
+  const estilos = getComputedStyle(document.documentElement);
+  const colorPre = estilos.getPropertyValue('--accent-cyan').trim() || '#00e5ff';
+  const colorLim = estilos.getPropertyValue('--accent-red').trim() || '#ff1744';
   if (chartMiniInst) chartMiniInst.destroy();
   chartMiniInst = new Chart(ctx, {
     type: 'pie',
     data: {
       labels: ['Prefrontal', 'Límbico'],
-      datasets: [{ data: [pctPre, Math.max(0, 100 - pctPre)], backgroundColor: ['var(--accent-cyan)', 'var(--accent-red)'] }]
+      datasets: [{ data: [pctPre, Math.max(0, 100 - pctPre)], backgroundColor: [colorPre, colorLim], borderWidth: 0 }]
     },
     options: {
       plugins: { 
@@ -549,13 +667,18 @@ function actualizarGraficoMini(pctPre, pctLim) {
   });
 }
 
+
 verificarReseteoSemanal();
 renderizarTabla();
 
-// Si la app queda abierta y pasa el lunes (4 AM), reinicia sola sin tener que cerrarla
+// Si la app queda abierta y pasa la medianoche (4 AM), actualiza sola
+let ultimoDiaRenderizado = claveFecha(obtenerFechaActual());
 setInterval(() => {
-  if (claveFecha(obtenerLunesActual()) !== localStorage.getItem('NEURO_LAST_WEEK_RESET')) {
-    verificarReseteoSemanal();
+  const semanaCambio = claveFecha(obtenerLunesActual()) !== localStorage.getItem('NEURO_LAST_WEEK_RESET');
+  const diaCambio = claveFecha(obtenerFechaActual()) !== ultimoDiaRenderizado;
+  if (semanaCambio) verificarReseteoSemanal();
+  if (semanaCambio || diaCambio) {
+    ultimoDiaRenderizado = claveFecha(obtenerFechaActual());
     renderizarTabla();
   }
 }, 60000);
